@@ -22,6 +22,7 @@ public class Worker
     const int numberOfAttemptsToStartSftpByDefault = 10;
     const int numberOfAttemptsToStopSftpByDefault = 10;
     const string allBackups = "*";
+    private readonly AWSUploader _awsUploader;
 
     private WorkerSettings Settings => _workerSettings.Value;
 
@@ -29,6 +30,7 @@ public class Worker
     {
         _workerSettings = workerSettings;
         _logger = logger;
+        _awsUploader = new AWSUploader(_workerSettings);
     }
 
     public async Task ExecuteAsync(CancellationToken cancellationToken = default)
@@ -49,7 +51,7 @@ public class Worker
     {
         var report = new WorkerReport
         {
-            DatabaseReports = new List<DatabaseReport>(),
+            Reports = new List<Report>(),
             UploadType = UploadType.SFTP
         };
         var vsClient = new VirtualServerApiClient(Settings.ApiKey!, Settings.ApiRoot);
@@ -67,7 +69,7 @@ public class Worker
             foreach (var databaseSetting in Settings.DatabaseSettings)
             {
                 var dbReport = await BackupDatabaseAndUploadToFtp(databaseSetting);
-                report.DatabaseReports.Add(dbReport);
+                report.Reports.Add(dbReport);
             }
         }
 
@@ -86,14 +88,32 @@ public class Worker
     {
         var report = new WorkerReport
         {
-            DatabaseReports = new List<DatabaseReport>(),
+            Reports = new List<Report>(),
             UploadType = UploadType.AWS,
         };
 
         foreach (var databaseSetting in Settings.DatabaseSettings)
         {
             var dbReport = await BackupDatabaseAndUploadToAWS(databaseSetting);
-            report.DatabaseReports.Add(dbReport);
+            report.Reports.Add(dbReport);
+        }
+
+        if (Settings.FoldersPaths.Any())
+        {
+            var compressedFolders = DirectoryProvider.CreateDirectoryArchives(Settings).ToList();
+            foreach(var (archiveName, archivePath, directoryName) in compressedFolders)
+            {
+                var tempReport = new DirectoryReport()
+                {
+                    BackupName = archiveName,
+                    DirectoryName = directoryName,
+                    BackupTempLocation = archivePath,
+                    IsBackupCreated = true,
+                };
+                await _awsUploader.UploadToAWS(tempReport);
+                CleanBackupTempFile(tempReport);
+                report.Reports.Add(tempReport);
+            }
         }
 
         return report;
@@ -126,7 +146,7 @@ public class Worker
         return report;
     }
 
-    private void CleanBackupTempFile(ref DatabaseReport report)
+    private void CleanBackupTempFile(Report report)
     {
         if (!report.IsBackupUploaded)
             return;
@@ -153,7 +173,7 @@ public class Worker
             await UploadBackupAsync(report);
         }
 
-        CleanBackupTempFile(ref report);
+        CleanBackupTempFile(report);
 
         return report;
     }
@@ -163,11 +183,10 @@ public class Worker
         var report = BackupDatabase(databaseSetting);
         if (report.IsBackupCreated)
         {
-            var uploader = new AWSUploader(_workerSettings);
-            report = await uploader.UploadToAWS(report);
+            report = (DatabaseReport)await _awsUploader.UploadToAWS(report);
         }
 
-        CleanBackupTempFile(ref report);
+        CleanBackupTempFile(report);
 
         return report;
     }
@@ -318,24 +337,32 @@ public class Worker
         }
     }
 
-    private string PrepareReportBody(WorkerReport report)
+    private string PrepareReportBody(WorkerReport workerReport)
     {
         var result = new StringBuilder();
-        if (report.UploadType == UploadType.SFTP)
-            result.AppendLine(GetSftpVpsStates(report));
+        if (workerReport.UploadType == UploadType.SFTP)
+            result.AppendLine(GetSftpVpsStates(workerReport));
 
-        foreach (var databaseReport in report.DatabaseReports)
+        foreach (var report in workerReport.Reports)
         {
             result.AppendLine();
-            result.AppendLine($"{databaseReport.DatabaseSetting.DatabaseName}:");
-            if (databaseReport.IsBackupCreated)
+            if (report is DatabaseReport databaseReport 
+                && databaseReport.DatabaseSetting != null)
             {
-                result.AppendLine($"\tBackup name: {databaseReport.BackupName}");
-                result.AppendLine($"\tUploaded to {Enum.GetName(typeof(UploadType), report.UploadType)}: {databaseReport.IsBackupUploaded}");
-                result.AppendLine($"\tTemp backup file deleted: {databaseReport.IsTempBackupDeleted}");
+                result.AppendLine($"{databaseReport.DatabaseSetting.DatabaseName}:");
             }
-            if (!string.IsNullOrEmpty(databaseReport.LastError))
-                result.AppendLine($"\tLast error: {databaseReport.LastError}");
+            else if(report is DirectoryReport directoryReport)
+            {
+                result.AppendLine($"Directory backup: {directoryReport.DirectoryName}");
+            }
+            if (report.IsBackupCreated)
+            {
+                result.AppendLine($"\tBackup name: {report.BackupName}");
+                result.AppendLine($"\tUploaded to {Enum.GetName(typeof(UploadType), workerReport.UploadType)}: {report.IsBackupUploaded}");
+                result.AppendLine($"\tTemp backup file deleted: {report.IsTempBackupDeleted}");
+            }
+            if (!string.IsNullOrEmpty(report.LastError))
+                result.AppendLine($"\tLast error: {report.LastError}");
         }
 
         return result.ToString();

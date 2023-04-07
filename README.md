@@ -66,3 +66,10 @@ Tool to backup data to SFTP
   }
 }
 ```
+
+# AWS Setup
+1. Create a new user through Identity and Access Management (IAM) (or use an existing user).
+2. Add this user the rights to create/manage s3 buckets
+3. Generate and obtain access keys for this user
+4. Use the terraform script in the folder terraform-scripts/bucketsetup.tf to create a new buckets (see readme)
+5. After creating a new bucket, insert the user access keys and the name of the bucket in appsettings.json (AWSSettings)

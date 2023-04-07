@@ -361,3 +361,6 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+terraform-scripts/terraform.tfstate
+terraform-scripts/.terraform/providers/registry.terraform.io/hashicorp/aws/3.76.1/windows_386/terraform-provider-aws_v3.76.1_x5.exe
+terraform-scripts/.terraform.lock.hcl

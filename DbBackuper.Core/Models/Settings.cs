@@ -25,6 +25,7 @@
         public MailSettings MailSettings { get; set; }
 
         public List<DatabaseSetting> DatabaseSettings { get; set; }
+        public List<string> FoldersPaths { get; set; }
         public AWSSettings AWSSettings { get; set; }
     }
 

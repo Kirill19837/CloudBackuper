@@ -8,6 +8,19 @@ using Microsoft.Extensions.Options;
 
 namespace DbBackuper.Core.AWS
 {
+    public class AWSUploadResult
+    {
+        public AWSUploadResult() { }
+        public AWSUploadResult(PutObjectResponse response)
+        {
+            Response = response;
+            IsSuccess = response.HttpStatusCode == System.Net.HttpStatusCode.OK;
+            LastErrorMessage = string.Empty;
+        }
+        public PutObjectResponse? Response { get; set; }
+        public bool IsSuccess { get; set; }
+        public string? LastErrorMessage { get; set; }
+    }
     public class AWSUploader
     {
         private static readonly RegionEndpoint _bucketRegion = RegionEndpoint.EUNorth1;
@@ -21,41 +34,77 @@ namespace DbBackuper.Core.AWS
             _client = new AmazonS3Client(credentials, _bucketRegion);
         }
 
-        public async Task<DatabaseReport> UploadToAWS(DatabaseReport report)
+        public async Task<Report> UploadToAWS(Report report)
         {
+            var folderName = await GetFolderName(report);
+            var uploadResult = await UploadToAWS(report.BackupTempLocation, Path.Combine(folderName, report.BackupName));
+            if(uploadResult.IsSuccess)
+            {
+                report.IsBackupUploaded = true;
+                return report;
+            }
+
+            report.IsBackupUploaded = false;
+            report.LastError = uploadResult.LastErrorMessage;
+            return report;
+        }
+
+        public async Task<AWSUploadResult> UploadToAWS(string filePath, string objectKey)
+        {
+            var uploadResult = new AWSUploadResult();
             try
             {
-                var folderName = report.DatabaseSetting.DatabaseName.TrimEnd('/') + '/';
-                await CreateFolderAsync(folderName);
-
                 var putRequest = new PutObjectRequest
                 {
                     BucketName = Settings.AWSSettings.BucketName,
-                    Key = Path.Combine(folderName, report.BackupName),
-                    FilePath = report.BackupTempLocation,
+                    Key = objectKey,
+                    FilePath = filePath,
                 };
 
-                PutObjectResponse response = await _client.PutObjectAsync(putRequest);
-                if(response.HttpStatusCode == System.Net.HttpStatusCode.OK)
-                {
-                    report.IsBackupUploaded = true;
-                    return report;
-                }
+                uploadResult.Response = await _client.PutObjectAsync(putRequest);
+                uploadResult.IsSuccess = true;
             }
             catch (AmazonS3Exception e)
             {
                 var errorMessage = "[AWS] Upload error. Message: {0}" + e.Message;
                 Console.WriteLine(errorMessage);
-                report.LastError = errorMessage;
+                uploadResult.IsSuccess = false;
+                uploadResult.LastErrorMessage = errorMessage;
             }
             catch (Exception e)
             {
                 var errorMessage = "[APP] Upload to AWS error. Message: {0}" + e.Message;
                 Console.WriteLine(errorMessage);
-                report.LastError = errorMessage;
+                uploadResult.IsSuccess = false;
+                uploadResult.LastErrorMessage = errorMessage;
             }
-            report.IsBackupUploaded = false;
-            return report;
+
+            return uploadResult;
+        }
+
+        private async Task<string> GetFolderName(Report report)
+        {
+            string? folderName;
+            if (report is DatabaseReport databaseReport
+                && databaseReport.DatabaseSetting != null)
+            {
+                folderName = databaseReport.DatabaseSetting.DatabaseName;
+            }
+            else if (report is DirectoryReport directoryReport)
+            {
+                folderName = directoryReport.DirectoryName;
+            }
+            else
+            {
+                folderName = string.Empty;
+            }
+
+            folderName = folderName.TrimEnd('/') + '/';
+
+            if (!string.IsNullOrEmpty(folderName))
+                await CreateFolderAsync(folderName);
+
+            return folderName;
         }
 
         private async Task CreateFolderAsync(string path)

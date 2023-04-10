@@ -9,6 +9,8 @@ using DbBackuper.Core.Models;
 using DbBackuper.Core.Utility;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.SqlServer.Management.Smo;
+
 namespace DbBackuper;
 
 public class Worker
@@ -100,20 +102,24 @@ public class Worker
 
         if (Settings.FoldersPaths.Any())
         {
-            var compressedFolders = DirectoryProvider.CreateDirectoryArchives(Settings).ToList();
-            foreach(var (archiveName, archivePath, directoryName) in compressedFolders)
+            var options = new ParallelOptions { MaxDegreeOfParallelism = 2 };
+            await Parallel.ForEachAsync(Settings.FoldersPaths, options, async (folderToBackup, token) =>
             {
+                if (!Directory.Exists(folderToBackup))
+                    return;
+                var compressedFolder = DirectoryProvider.CreateDirectoryArchive(Settings, folderToBackup);
                 var tempReport = new DirectoryReport()
                 {
-                    BackupName = archiveName,
-                    DirectoryName = directoryName,
-                    BackupTempLocation = archivePath,
+                    BackupName = compressedFolder.ArchiveName,
+                    DirectoryName = compressedFolder.DirectoryName,
+                    BackupTempLocation = compressedFolder.ArchivePath,
                     IsBackupCreated = true,
+                    FileArchiveErrors = compressedFolder.ArchiveErrors
                 };
                 await _awsUploader.UploadToAWS(tempReport);
                 CleanBackupTempFile(tempReport);
                 report.Reports.Add(tempReport);
-            }
+            });
         }
 
         return report;
@@ -340,50 +346,12 @@ public class Worker
     private string PrepareReportBody(WorkerReport workerReport)
     {
         var result = new StringBuilder();
-        if (workerReport.UploadType == UploadType.SFTP)
-            result.AppendLine(GetSftpVpsStates(workerReport));
-
         foreach (var report in workerReport.Reports)
         {
             result.AppendLine();
-            if (report is DatabaseReport databaseReport 
-                && databaseReport.DatabaseSetting != null)
-            {
-                result.AppendLine($"{databaseReport.DatabaseSetting.DatabaseName}:");
-            }
-            else if(report is DirectoryReport directoryReport)
-            {
-                result.AppendLine($"Directory backup: {directoryReport.DirectoryName}");
-            }
-            if (report.IsBackupCreated)
-            {
-                result.AppendLine($"\tBackup name: {report.BackupName}");
-                result.AppendLine($"\tUploaded to {Enum.GetName(typeof(UploadType), workerReport.UploadType)}: {report.IsBackupUploaded}");
-                result.AppendLine($"\tTemp backup file deleted: {report.IsTempBackupDeleted}");
-            }
-            if (!string.IsNullOrEmpty(report.LastError))
-                result.AppendLine($"\tLast error: {report.LastError}");
+            result.AppendLine(report.GetReportRaw(workerReport, Settings));
         }
 
-        return result.ToString();
-    }
-
-    private string GetSftpVpsStates(WorkerReport report)
-    {
-        var result = new StringBuilder();
-
-        if (report.RunResult.Result)
-            result.AppendLine($"Initial VPS state: {report.RunResult.InitialVpsState}");
-        else
-            result.AppendLine($"Can't start VPS: {report.RunResult.LastError}");
-
-        if (Settings.StopVpsOnFinish)
-        {
-            if (report.StopResult.Result)
-                result.AppendLine($"Final VPS state: {report.StopResult.FinalVpsState}");
-            else
-                result.AppendLine($"Can't stop VPS: {report.StopResult.LastError}");
-        }
         return result.ToString();
     }
 }

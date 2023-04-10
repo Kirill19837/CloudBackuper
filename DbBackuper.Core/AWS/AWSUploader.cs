@@ -51,6 +51,7 @@ namespace DbBackuper.Core.AWS
 
         public async Task<AWSUploadResult> UploadToAWS(string filePath, string objectKey)
         {
+            Console.WriteLine($"Uploading to aws {filePath} ...");
             var uploadResult = new AWSUploadResult();
             try
             {

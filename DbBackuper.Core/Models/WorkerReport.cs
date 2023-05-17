@@ -1,5 +1,5 @@
-﻿using Microsoft.SqlServer.Management.Smo;
-using System.Text;
+﻿using System.Text;
+using DbBackuper.Core.Extensions;
 
 namespace DbBackuper.Core.Models;
 
@@ -17,12 +17,14 @@ public class Report
     public bool IsTempBackupDeleted { get; set; }
     public string BackupTempLocation { get; set; }
     public string? LastError { get; set; }
+    public long BackupSize { get; set; }
 
     public virtual string GetReportRaw(WorkerReport workerReport, WorkerSettings workerSettings)
     {
         var result = new StringBuilder();
 
         result.AppendLine($"\tBackup name: {BackupName}");
+        result.AppendLine($"\tBackup size: {BackupSize.FormatBytes()}");
         result.AppendLine($"\tUploaded to {Enum.GetName(typeof(UploadType), workerReport.UploadType)}: {IsBackupUploaded}");
         result.AppendLine($"\tTemp backup file deleted: {IsTempBackupDeleted}");
 
@@ -75,13 +77,13 @@ public class ArchiveResult
     public ArchiveResult(string archiveName, string archivePath, string directoryName, IEnumerable<FileArchiveError> archiveErrors)
     {
         ArchiveName = archiveName;
-        ArchivePath = archivePath;
+        ArchiveInfo = new FileInfo(archivePath);
         DirectoryName = directoryName;
         ArchiveErrors = archiveErrors;
     }
 
     public string ArchiveName { get; init; }
-    public string ArchivePath { get; init; }
+    public FileInfo ArchiveInfo { get; init; }
     public string DirectoryName { get; init; }
     public IEnumerable<FileArchiveError> ArchiveErrors { get; init; } 
 }

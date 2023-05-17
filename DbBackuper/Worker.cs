@@ -1,4 +1,5 @@
-﻿using System.Net;
+﻿using System.IO;
+using System.Net;
 using System.Net.Mail;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -112,7 +113,8 @@ public class Worker
                 {
                     BackupName = compressedFolder.ArchiveName,
                     DirectoryName = compressedFolder.DirectoryName,
-                    BackupTempLocation = compressedFolder.ArchivePath,
+                    BackupTempLocation = compressedFolder.ArchiveInfo.FullName,
+                    BackupSize = compressedFolder.ArchiveInfo.Length,
                     IsBackupCreated = true,
                     FileArchiveErrors = compressedFolder.ArchiveErrors
                 };
@@ -132,12 +134,15 @@ public class Worker
         //Backup DB to temp folder
         try
         {
-            report.BackupTempLocation = DbBackupsProvider.BackupDatabase(
+            var backupInfo = DbBackupsProvider.BackupDatabase(
                 databaseSetting.DatabaseName,
                 databaseSetting.UserName,
                 databaseSetting.UserPassword,
                 databaseSetting.ServerName,
                 Settings.BackupsTempFolder);
+
+            report.BackupTempLocation = backupInfo.FullName;
+            report.BackupSize = backupInfo.Length;
 
             report.IsBackupCreated = true;
             report.BackupName = Path.GetFileName(report.BackupTempLocation);

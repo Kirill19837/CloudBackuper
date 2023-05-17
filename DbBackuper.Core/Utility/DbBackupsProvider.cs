@@ -6,7 +6,7 @@ namespace DbBackuper.Core.Utility;
 
 public static class DbBackupsProvider
 {
-    public static string BackupDatabase(string databaseName, string userName, string password, string serverName, string destinationPath)
+    public static FileInfo BackupDatabase(string databaseName, string userName, string password, string serverName, string destinationPath)
     {
         var now = DateTime.Now;
         var sqlBackup = new Backup
@@ -43,7 +43,7 @@ public static class DbBackupsProvider
         sqlBackup.SqlBackup(sqlServer);
         sqlBackup.Devices.Remove(deviceItem);
 
-        return backupFilePath;
+        return new FileInfo(backupFilePath);
     }
 
     private static void CheckIfFolder(string folderPath)

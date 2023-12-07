@@ -1,7 +1,7 @@
 # DbBackuper
 Tool to backup data to SFTP
 1.	Copy your json settings to https://demo.kenhaggerty.com/demos/aescipher. (Plain Text field)
-2.	Enter your Base64 Key (5SK9+X0fVBdtHPLVotaLZA==) and Base64 IV (ATRo0UuvTCu95JJJEKOF2w==)
+2.	Enter your Base64 Key (5SK9+X0fVBdtHPLVataLZA==) and Base64 IV (ATRo0UuvTCe95JJJEKOF2w==)
 3.	Click “encrypt”
 4.	Copy encrypted data to your appsettins.json
 
